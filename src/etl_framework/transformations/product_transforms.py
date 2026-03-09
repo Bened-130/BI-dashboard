@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional  # FIXED: Added Any import
 
 # PySpark imports with graceful fallback
 try:
@@ -8,7 +8,7 @@ try:
         col, when, lit, trim, initcap, upper, 
         regexp_replace, round as spark_round,
         current_timestamp, input_file_name, length,
-        datediff, month, pandas_udf, PandasUDFType
+        datediff, month
     )
     from pyspark.sql.types import StringType, DoubleType
     PYSPARK_AVAILABLE = True
@@ -34,7 +34,7 @@ class ProductTransformer:
     def __init__(self):
         self.validation_rules = []
     
-    def standardize_schema(self, df: Any) -> Any:
+    def standardize_schema(self, df: Any) -> Any:  # Now Any is properly defined
         """Standardize column names and types"""
         if not PYSPARK_AVAILABLE:
             raise ImportError("PySpark not available")
@@ -131,7 +131,6 @@ class ProductTransformer:
             return df.withColumn("price_competitiveness_score", lit(50.0))
         
         # Collect prices to driver for calculation (for small datasets)
-        # For large datasets, use Spark SQL functions instead
         prices = [row.price for row in df.select("price").collect()]
         
         if not prices or len(prices) == 0:
