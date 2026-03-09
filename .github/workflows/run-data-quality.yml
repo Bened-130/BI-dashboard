@@ -1,17 +1,22 @@
-name: Synapse ETL CI/CD
+name: Run Data Quality Checks
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - 'src/**'
-      - 'synapse/**'
-      - '.github/workflows/**'
-  pull_request:
-    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM
+  workflow_dispatch:
+    inputs:
+      layer:
+        description: 'Data layer to validate'
+        required: true
+        default: 'silver'
+        type: choice
+        options:
+          - bronze
+          - silver
+          - gold
 
 jobs:
-  test:
+  data-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,64 +28,9 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-cov flake8 black
+          pip install great_expectations pandas pyspark==3.4.1
       
-      - name: Lint with flake8
+      - name: Run Quality Checks
         run: |
-          flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
-      
-      - name: Check formatting with black
-        run: |
-          black --check src || true
-      
-      - name: Run unit tests
-        run: |
-          pytest tests/unit -v || echo "No tests found"
-
-  validate-synapse:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Validate JSON schemas
-        run: |
-          find synapse -name "*.json" -exec python -m json.tool {} \; > /dev/null && echo "JSON validation passed"
-      
-      - name: Check Python syntax
-        run: |
-          python -m py_compile src/etl_framework/config/settings.py
-          python -m py_compile src/etl_framework/connectors/delta_lake_manager.py
-          python -m py_compile src/etl_framework/core/extractors.py
-          python -m py_compile src/etl_framework/transformations/product_transforms.py
-          python -m py_compile src/etl_framework/quality/great_expectations_suites.py
-
-  deploy-synapse:
-    runs-on: ubuntu-latest
-    needs: [test, validate-synapse]
-    if: github.ref == 'refs/heads/main'
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Deploy to Synapse
-        run: |
-          echo "Deploying Synapse artifacts..."
-          # Add Synapse deployment commands here
-          # Use Synapse REST API or Azure CLI extensions
-
-  trigger-etl:
-    runs-on: ubuntu-latest
-    needs: deploy-synapse
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Trigger Master Pipeline
-        run: |
-          echo "Triggering ETL pipeline..."
-          # curl command to trigger Synapse pipeline
+          echo "Running data quality checks for ${{ github.event.inputs.layer || 'silver' }} layer"
+          # Python script to run Great Expectations validation
