@@ -12,7 +12,7 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
@@ -57,10 +57,10 @@ jobs:
           python -m py_compile src/etl_framework/quality/great_expectations_suites.py
 
   deploy-synapse:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     needs: [test, validate-synapse]
     if: github.ref == 'refs/heads/main'
-    environment: production
+    environment: production  # This is valid - refers to GitHub Environment named "production"
     steps:
       - uses: actions/checkout@v4
       
@@ -73,10 +73,9 @@ jobs:
         run: |
           echo "Deploying Synapse artifacts..."
           # Add Synapse deployment commands here
-          # Use Synapse REST API or Azure CLI extensions
 
   trigger-etl:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     needs: deploy-synapse
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
