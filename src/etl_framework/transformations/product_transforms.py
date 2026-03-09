@@ -1,5 +1,6 @@
+from __future__ import annotations
 import logging
-from typing import Any, List, Optional  # FIXED: Added Any import
+from typing import Any, List, Optional, Dict, Union  # FIXED: Ensure Any is imported here
 
 # PySpark imports with graceful fallback
 try:
@@ -32,9 +33,9 @@ class ProductTransformer:
     """Enterprise-grade product data transformations"""
     
     def __init__(self):
-        self.validation_rules = []
+        self.validation_rules: List[str] = []
     
-    def standardize_schema(self, df: Any) -> Any:  # Now Any is properly defined
+    def standardize_schema(self, df: Any) -> Any:
         """Standardize column names and types"""
         if not PYSPARK_AVAILABLE:
             raise ImportError("PySpark not available")
@@ -201,12 +202,10 @@ class ProductTransformer:
     
     def transform(self, df: Any) -> Any:
         """Execute full transformation pipeline"""
-        return (
-            df
-            .transform(self.standardize_schema)
-            .transform(self.clean_text_fields)
-            .transform(self.handle_missing_values)
-            .transform(self.add_derived_columns)
-            .transform(self.apply_ml_features)
-            .transform(self.validate_business_rules)
-        )
+        result = self.standardize_schema(df)
+        result = self.clean_text_fields(result)
+        result = self.handle_missing_values(result)
+        result = self.add_derived_columns(result)
+        result = self.apply_ml_features(result)
+        result = self.validate_business_rules(result)
+        return result
