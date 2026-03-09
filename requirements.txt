@@ -1,0 +1,26 @@
+# Azure SDK
+azure-identity>=1.14.0
+azure-keyvault-secrets>=4.7.0
+azure-storage-file-datalake>=12.12.0
+
+# Data Processing
+pyspark==3.4.1
+delta-spark==2.4.0
+
+# Data Quality
+great-expectations==0.18.0
+
+# Configuration
+pydantic>=1.10.0,<2.0.0
+python-dotenv>=1.0.0
+
+# Utilities
+requests>=2.31.0
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Development
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.0.0
+flake8>=6.0.0
