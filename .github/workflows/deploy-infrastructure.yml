@@ -1,0 +1,46 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Deploy Bicep Template
+        uses: azure/arm-deploy@v1
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+          resourceGroupName: ${{ secrets.RESOURCE_GROUP }}
+          template: ./infrastructure/main.bicep
+          parameters: >
+            {
+              "environment": "prod",
+              "projectName": "synapseetl",
+              "sqlAdminPassword": "${{ secrets.SQL_ADMIN_PASSWORD }}"
+            }
+          failOnStdErr: false
+      
+      - name: Deploy Key Vault Secrets
+        shell: pwsh
+        run: |
+          $keyVaultName = "${{ secrets.KEYVAULT_NAME }}"
+          $secrets = @{
+            "synapse-sql-password" = "${{ secrets.SQL_ADMIN_PASSWORD }}"
+            "adls-connection-string" = "${{ secrets.ADLS_CONNECTION_STRING }}"
+          }
+          
+          foreach ($secret in $secrets.GetEnumerator()) {
+            az keyvault secret set --vault-name $keyVaultName --name $secret.Key --value $secret.Value
+          }
