@@ -1,9 +1,18 @@
-from delta import configure_spark_with_delta_pip
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import col, current_timestamp, lit
-from typing import Optional, List, Dict, Any
 import logging
 from datetime import datetime
+from typing import Optional, List, Dict, Any
+
+# PySpark imports with graceful fallback
+try:
+    from pyspark.sql import SparkSession, DataFrame
+    from pyspark.sql.functions import col, current_timestamp, lit
+    from delta.tables import DeltaTable
+    DELTA_AVAILABLE = True
+except ImportError:
+    DELTA_AVAILABLE = False
+    SparkSession = None
+    DataFrame = None
+    DeltaTable = None
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +20,17 @@ logger = logging.getLogger(__name__)
 class DeltaLakeManager:
     """Enterprise Delta Lake manager for Synapse Spark"""
     
-    def __init__(self, spark: SparkSession, storage_path: str):
+    def __init__(self, spark: Any, storage_path: str):
+        """
+        Initialize Delta Lake manager
+        
+        Args:
+            spark: SparkSession instance
+            storage_path: Root storage path (abfss://...)
+        """
+        if not DELTA_AVAILABLE:
+            raise ImportError("PySpark or Delta Lake not available. Install with: pip install pyspark delta-spark")
+        
         self.spark = spark
         self.storage_path = storage_path
         self._configure_delta()
@@ -26,7 +45,7 @@ class DeltaLakeManager:
     
     def write_bronze(
         self, 
-        df: DataFrame, 
+        df: Any, 
         table_name: str,
         partition_cols: Optional[List[str]] = None,
         mode: str = "overwrite"
@@ -61,7 +80,7 @@ class DeltaLakeManager:
     
     def write_silver(
         self,
-        df: DataFrame,
+        df: Any,
         table_name: str,
         merge_key: Optional[str] = None,
         partition_cols: Optional[List[str]] = None
@@ -72,7 +91,7 @@ class DeltaLakeManager:
         Args:
             df: Transformed DataFrame
             table_name: Target table name
-            merge_key: Key for merge operations (SCD Type 1/2)
+            merge_key: Key for merge operations (comma-separated for composite keys)
             partition_cols: Partition columns
         """
         path = f"{self.storage_path}/silver/{table_name}"
@@ -90,17 +109,16 @@ class DeltaLakeManager:
     
     def _merge_delta_table(
         self, 
-        df: DataFrame, 
+        df: Any, 
         path: str, 
         merge_key: str
     ) -> None:
         """Perform Delta merge operation"""
-        from delta.tables import DeltaTable
-        
         delta_table = DeltaTable.forPath(self.spark, path)
         
         # Build merge condition dynamically
-        merge_condition = " AND ".join([f"target.{k} = source.{k}" for k in merge_key.split(",")])
+        keys = [k.strip() for k in merge_key.split(",")]
+        merge_condition = " AND ".join([f"target.{k} = source.{k}" for k in keys])
         
         delta_table.alias("target") \
             .merge(df.alias("source"), merge_condition) \
@@ -110,17 +128,17 @@ class DeltaLakeManager:
     
     def write_gold(
         self,
-        df: DataFrame,
+        df: Any,
         table_name: str,
         distribution_type: str = "ROUND_ROBIN",
         index_cols: Optional[List[str]] = None
     ) -> None:
         """
-        Write aggregated data to Gold layer (Dedicated SQL Pool)
+        Write aggregated data to Gold layer
         
         Args:
             df: Aggregated DataFrame
-            table_name: Target table name in SQL Pool
+            table_name: Target table name
             distribution_type: Hash, Round_Robin, or Replicate
             index_cols: Columns for indexing
         """
@@ -150,11 +168,10 @@ class DeltaLakeManager:
         )
         DISTRIBUTION = {distribution_type}
         """
-        logger.info(f"Created external table: {table_name}")
+        logger.info(f"Created external table DDL: {ddl}")
     
     def _table_exists(self, path: str) -> bool:
         """Check if Delta table exists"""
-        from delta.tables import DeltaTable
         try:
             DeltaTable.forPath(self.spark, path)
             return True
@@ -163,28 +180,27 @@ class DeltaLakeManager:
     
     def optimize_table(self, table_name: str, zorder_cols: Optional[List[str]] = None) -> None:
         """Optimize Delta table with VACUUM and OPTIMIZE"""
-        from delta.tables import DeltaTable
-        
         path = f"{self.storage_path}/silver/{table_name}"
         delta_table = DeltaTable.forPath(self.spark, path)
         
         # Run OPTIMIZE (compaction)
-        delta_table.optimize().executeZOrderBy(*zorder_cols) if zorder_cols else delta_table.optimize().executeCompaction()
+        if zorder_cols:
+            delta_table.optimize().executeZOrderBy(*zorder_cols)
+        else:
+            delta_table.optimize().executeCompaction()
         
         # Run VACUUM (cleanup old versions)
         self.spark.sql(f"VACUUM delta.`{path}` RETAIN 168 HOURS")
         
         logger.info(f"Optimized table: {table_name}")
     
-    def get_table_history(self, table_name: str, layer: str = "silver") -> DataFrame:
+    def get_table_history(self, table_name: str, layer: str = "silver") -> Any:
         """Get Delta table version history"""
-        from delta.tables import DeltaTable
-        
         path = f"{self.storage_path}/{layer}/{table_name}"
         delta_table = DeltaTable.forPath(self.spark, path)
         return delta_table.history()
     
-    def time_travel_query(self, table_name: str, timestamp: str, layer: str = "silver") -> DataFrame:
+    def time_travel_query(self, table_name: str, timestamp: str, layer: str = "silver") -> Any:
         """Query table at specific point in time"""
         path = f"{self.storage_path}/{layer}/{table_name}"
         return self.spark.read \
