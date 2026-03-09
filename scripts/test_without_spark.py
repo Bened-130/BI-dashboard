@@ -7,31 +7,40 @@ import sys
 import os
 from datetime import datetime
 
+# Force unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+def log(message):
+    """Force print with flush"""
+    print(message, flush=True)
+
 def test_configuration():
     """Test configuration loading"""
-    print("\n" + "="*60)
-    print("TEST 1: Configuration")
-    print("="*60)
+    log("\n" + "="*60)
+    log("TEST 1: Configuration")
+    log("="*60)
     
     try:
         from etl_framework.config.settings import get_settings, Settings
         settings = get_settings()
-        print(f"✓ Environment: {settings.environment}")
-        print(f"✓ Storage path: {settings.storage.abfss_root}")
-        print("✓ Configuration loaded successfully")
+        log(f"✓ Environment: {settings.environment}")
+        log(f"✓ Storage path: {settings.storage.abfss_root}")
+        log("✓ Configuration loaded successfully")
         return True
     except Exception as e:
-        print(f"✗ Configuration failed: {e}")
+        log(f"✗ Configuration failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def test_transformer_logic():
     """Test transformer business logic without Spark"""
-    print("\n" + "="*60)
-    print("TEST 2: Transformer Business Logic")
-    print("="*60)
+    log("\n" + "="*60)
+    log("TEST 2: Transformer Business Logic")
+    log("="*60)
     
     # Pure Python test of business rules
     test_products = [
@@ -39,7 +48,7 @@ def test_transformer_logic():
         {"product_id": "PROD-002", "product_name": "Gaming KEYBOARD", "category": None, "price": None},
     ]
     
-    print(f"Input products: {len(test_products)}")
+    log(f"Input products: {len(test_products)}")
     
     # Test business rules
     for product in test_products:
@@ -70,16 +79,16 @@ def test_transformer_logic():
         else:
             product['price_tier'] = "Premium"
         
-        print(f"  ✓ {product['product_id']}: {cleaned_name} | {product['category']} | ${price} | {product['price_tier']}")
+        log(f"  ✓ {product['product_id']}: {cleaned_name} | {product['category']} | ${price} | {product['price_tier']}")
     
-    print("✓ Business logic validated")
+    log("✓ Business logic validated")
     return True
 
 def test_data_quality_rules():
     """Test data quality rules"""
-    print("\n" + "="*60)
-    print("TEST 3: Data Quality Rules")
-    print("="*60)
+    log("\n" + "="*60)
+    log("TEST 3: Data Quality Rules")
+    log("="*60)
     
     test_data = [
         {"product_id": "PROD-001", "product_name": "Valid Product", "price": 25.00},  # Valid
@@ -100,21 +109,21 @@ def test_data_quality_rules():
         )
         
         status = "✓ VALID" if is_valid else "✗ INVALID"
-        print(f"  {status}: {record['product_id']}")
+        log(f"  {status}: {record['product_id']}")
         
         if is_valid:
             valid_count += 1
         else:
             invalid_count += 1
     
-    print(f"\n✓ Validation complete: {valid_count} valid, {invalid_count} invalid")
+    log(f"\n✓ Validation complete: {valid_count} valid, {invalid_count} invalid")
     return True
 
 def test_file_structure():
     """Verify project structure"""
-    print("\n" + "="*60)
-    print("TEST 4: Project Structure")
-    print("="*60)
+    log("\n" + "="*60)
+    log("TEST 4: Project Structure")
+    log("="*60)
     
     required_files = [
         'src/etl_framework/__init__.py',
@@ -131,17 +140,17 @@ def test_file_structure():
         full_path = os.path.join(base_path, file_path)
         exists = os.path.exists(full_path)
         status = "✓" if exists else "✗"
-        print(f"  {status} {file_path}")
+        log(f"  {status} {file_path}")
     
-    print("✓ Structure verification complete")
+    log("✓ Structure verification complete")
     return True
 
 def main():
     """Run all tests"""
-    print("\n" + "="*70)
-    print("AZURE SYNAPSE ETL - LIGHTWEIGHT TEST SUITE")
-    print("No PySpark required - Pure Python validation")
-    print("="*70)
+    log("\n" + "="*70)
+    log("AZURE SYNAPSE ETL - LIGHTWEIGHT TEST SUITE")
+    log("No PySpark required - Pure Python validation")
+    log("="*70)
     
     results = []
     
@@ -150,24 +159,26 @@ def main():
     results.append(("Data Quality Rules", test_data_quality_rules()))
     results.append(("File Structure", test_file_structure()))
     
-    print("\n" + "="*70)
-    print("TEST SUMMARY")
-    print("="*70)
+    log("\n" + "="*70)
+    log("TEST SUMMARY")
+    log("="*70)
     
     for name, passed in results:
         status = "✓ PASS" if passed else "✗ FAIL"
-        print(f"  {status}: {name}")
+        log(f"  {status}: {name}")
     
     all_passed = all(r[1] for r in results)
     
-    print("="*70)
+    log("="*70)
     if all_passed:
-        print("✓ ALL TESTS PASSED")
-        print("Ready for Azure deployment!")
+        log("✓ ALL TESTS PASSED")
+        log("Ready for Azure deployment!")
     else:
-        print("✗ SOME TESTS FAILED")
-    print("="*70 + "\n")
+        log("✗ SOME TESTS FAILED")
+    log("="*70 + "\n")
     
+    # Force exit with proper code
+    sys.stdout.flush()
     return 0 if all_passed else 1
 
 if __name__ == "__main__":
