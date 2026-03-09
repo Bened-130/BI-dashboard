@@ -1,16 +1,29 @@
-from pyspark.sql import DataFrame
-from pyspark.sql.functions import (
-    col, when, lit, trim, initcap, upper, 
-    regexp_replace, round as spark_round,
-    current_timestamp, input_file_name,
-    monotonically_increasing_id,
-    pandas_udf, PandasUDFType
-)
-from pyspark.sql.types import StringType, DoubleType
-import pandas as pd
-import numpy as np
-from typing import List, Optional
 import logging
+from typing import List, Optional
+
+# PySpark imports with graceful fallback
+try:
+    from pyspark.sql import DataFrame
+    from pyspark.sql.functions import (
+        col, when, lit, trim, initcap, upper, 
+        regexp_replace, round as spark_round,
+        current_timestamp, input_file_name, length,
+        datediff, month, pandas_udf, PandasUDFType
+    )
+    from pyspark.sql.types import StringType, DoubleType
+    PYSPARK_AVAILABLE = True
+except ImportError:
+    PYSPARK_AVAILABLE = False
+    DataFrame = None
+
+try:
+    import pandas as pd
+    import numpy as np
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+    np = None
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +34,11 @@ class ProductTransformer:
     def __init__(self):
         self.validation_rules = []
     
-    def standardize_schema(self, df: DataFrame) -> DataFrame:
+    def standardize_schema(self, df: Any) -> Any:
         """Standardize column names and types"""
+        if not PYSPARK_AVAILABLE:
+            raise ImportError("PySpark not available")
+        
         # Rename columns to snake_case
         for col_name in df.columns:
             new_name = col_name.lower().replace(" ", "_").replace("-", "_")
@@ -42,7 +58,7 @@ class ProductTransformer:
         
         return df
     
-    def clean_text_fields(self, df: DataFrame) -> DataFrame:
+    def clean_text_fields(self, df: Any) -> Any:
         """Clean and standardize text fields"""
         text_columns = ["product_name", "category", "description"]
         
@@ -59,7 +75,7 @@ class ProductTransformer:
         
         return df
     
-    def handle_missing_values(self, df: DataFrame) -> DataFrame:
+    def handle_missing_values(self, df: Any) -> Any:
         """Handle missing values with business rules"""
         # Fill missing categories
         df = df.fillna({"category": "UNCATEGORIZED"})
@@ -80,7 +96,7 @@ class ProductTransformer:
         
         return df
     
-    def add_derived_columns(self, df: DataFrame) -> DataFrame:
+    def add_derived_columns(self, df: Any) -> Any:
         """Add business-derived columns"""
         # Price tiers
         df = df.withColumn(
@@ -108,35 +124,58 @@ class ProductTransformer:
         
         return df
     
-    @pandas_udf(DoubleType(), PandasUDFType.SCALAR)
-    def calculate_price_score(prices: pd.Series) -> pd.Series:
-        """Pandas UDF for complex price scoring using numpy"""
-        # Z-score normalization
-        mean_price = prices.mean()
-        std_price = prices.std()
+    def calculate_price_score(self, df: Any) -> Any:
+        """Calculate price competitiveness score"""
+        if not PANDAS_AVAILABLE:
+            logger.warning("Pandas not available, skipping price score calculation")
+            return df.withColumn("price_competitiveness_score", lit(50.0))
+        
+        # Collect prices to driver for calculation (for small datasets)
+        # For large datasets, use Spark SQL functions instead
+        prices = [row.price for row in df.select("price").collect()]
+        
+        if not prices or len(prices) == 0:
+            return df.withColumn("price_competitiveness_score", lit(50.0))
+        
+        mean_price = sum(prices) / len(prices)
+        std_price = (sum((x - mean_price) ** 2 for x in prices) / len(prices)) ** 0.5
         
         if std_price == 0:
-            return pd.Series([50.0] * len(prices))
+            return df.withColumn("price_competitiveness_score", lit(50.0))
         
-        z_scores = (prices - mean_price) / std_price
-        # Convert to 0-100 scale
-        scores = 50 + (z_scores * 10)
-        return np.clip(scores, 0, 100)
-    
-    def apply_ml_features(self, df: DataFrame) -> DataFrame:
-        """Add ML-ready features"""
-        # Apply pandas UDF
+        # Calculate z-score and convert to 0-100 scale
         df = df.withColumn(
             "price_competitiveness_score",
-            self.calculate_price_score(col("price"))
+            when(
+                std_price != 0,
+                spark_round(
+                    50 + ((col("price") - lit(mean_price)) / lit(std_price)) * 10,
+                    2
+                )
+            ).otherwise(50.0)
         )
+        
+        # Clip to 0-100 range
+        df = df.withColumn(
+            "price_competitiveness_score",
+            when(col("price_competitiveness_score") < 0, 0.0)
+            .when(col("price_competitiveness_score") > 100, 100.0)
+            .otherwise(col("price_competitiveness_score"))
+        )
+        
+        return df
+    
+    def apply_ml_features(self, df: Any) -> Any:
+        """Add ML-ready features"""
+        # Add price score
+        df = self.calculate_price_score(df)
         
         # Add embedding placeholder (would use actual ML model)
         df = df.withColumn("product_embedding", lit(None).cast("array<float>"))
         
         return df
     
-    def validate_business_rules(self, df: DataFrame) -> DataFrame:
+    def validate_business_rules(self, df: Any) -> Any:
         """Apply business rule validations"""
         # Flag invalid records
         df = df.withColumn(
@@ -153,14 +192,15 @@ class ProductTransformer:
         valid_df = df.filter(col("_is_valid") == True)
         invalid_df = df.filter(col("_is_valid") == False)
         
-        if invalid_df.count() > 0:
-            logger.warning(f"Found {invalid_df.count()} invalid product records")
+        invalid_count = invalid_df.count()
+        if invalid_count > 0:
+            logger.warning(f"Found {invalid_count} invalid product records")
             # Write to quarantine
             invalid_df.write.mode("append").parquet("/mnt/quarantine/products")
         
         return valid_df
     
-    def transform(self, df: DataFrame) -> DataFrame:
+    def transform(self, df: Any) -> Any:
         """Execute full transformation pipeline"""
         return (
             df
