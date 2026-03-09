@@ -7,7 +7,6 @@ Production-grade ETL framework for Azure Synapse Analytics implementing the Meda
 ### Prerequisites
 - Azure CLI
 - Python 3.10+
-- Terraform or Azure Bicep
 - Azure subscription with Owner access
 
 ### 1. Infrastructure Deployment
@@ -16,9 +15,11 @@ Production-grade ETL framework for Azure Synapse Analytics implementing the Meda
 # Login to Azure
 az login
 
+# Create resource group
+az group create --name rg-synapse-etl-prod --location eastus
+
 # Deploy infrastructure
-cd infrastructure
 az deployment group create \
   --resource-group rg-synapse-etl-prod \
-  --template-file main.bicep \
-  --parameters environment=prod
+  --template-file infrastructure/main.bicep \
+  --parameters environment=prod sqlAdminPassword=YourSecurePassword123!
